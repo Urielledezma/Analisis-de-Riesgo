@@ -1,0 +1,20 @@
+# Normaliza los finales de línea para que el repositorio sea idéntico en
+# Windows, macOS y Linux.
+* text=auto eol=lf
+
+*.R      text eol=lf
+*.Rmd    text eol=lf
+*.py     text eol=lf
+*.md     text eol=lf
+*.yml    text eol=lf
+*.Rproj  text eol=lf
+
+*.png    binary
+*.jpg    binary
+*.pdf    binary
+*.docx   binary
+*.xlsx   binary
+
+# El HTML compilado es un entregable, no código fuente: fuera de las
+# estadísticas de lenguaje y del ruido en los diffs.
+Modulo-*/*.html  linguist-generated=true

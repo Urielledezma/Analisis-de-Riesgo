@@ -1,0 +1,30 @@
+# --- R / RStudio -------------------------------------------------------------
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+.Renviron
+
+# --- Knitr / Quarto ----------------------------------------------------------
+# Los .html entregables SÍ se versionan; lo que se ignora es el andamiaje que
+# knitr y Quarto regeneran en cada compilación.
+.quarto/
+*_cache/
+Modulo-*/*_files/
+
+# --- Credenciales ------------------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# --- Office ------------------------------------------------------------------
+# Archivos de bloqueo que Word y Excel crean mientras un documento está abierto.
+~$*
+
+# --- Sistema operativo y editores --------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
