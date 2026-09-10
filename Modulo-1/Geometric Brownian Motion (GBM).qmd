@@ -1,0 +1,324 @@
+---
+title: "Movimiento Browniano Geométrico: del precio observado a los supuestos del modelo"
+author: "Francisco Uriel Ledezma Chávez"
+date: "Septiembre de 2026"
+lang: es
+format:
+  html:
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    number-sections: false
+    theme: flatly
+    highlight-style: tango
+    df-print: paged
+    embed-resources: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, warning = FALSE, message = FALSE,
+  fig.align = "center", fig.width = 12, fig.height = 4.2
+)
+```
+
+**Materia:** Análisis de Riesgos (Risk Analysis), Unidad 02
+**Profesora:** Rosario Ruiz Hernández
+**Institución:** ITESO, Universidad Jesuita de Guadalajara
+
+---
+
+# I) Introducción
+
+## Qué haré en este documento
+
+El movimiento browniano geométrico es el modelo de referencia sobre el que descansa buena parte de la teoría de valuación y de medición de riesgo, y su atractivo proviene de que resume el comportamiento de un precio en apenas dos parámetros, una deriva y una volatilidad, ambas constantes. Ese ahorro tiene un precio, ya que el modelo impone condiciones bastante exigentes sobre los rendimientos, y el propósito de este documento es exactamente el de someter esas condiciones a la evidencia de una serie real en lugar de darlas por buenas.
+
+El recorrido va del dato hacia el modelo. Primero descargo la serie de precios diarios de una emisora de la Bolsa Mexicana de Valores, después construyo los rendimientos simples y logarítmicos y describo su nivel y su dispersión, y finalmente contrasto de manera formal los dos supuestos que el modelo necesita y que sí admiten prueba estadística directa, que son la existencia de una deriva distinta de cero y la normalidad de los rendimientos. Cierro examinando el supuesto de volatilidad constante, que no se prueba con una sola estadística pero sí se refuta con evidencia gráfica muy simple.
+
+## El modelo que se pone a prueba
+
+El movimiento browniano geométrico postula que el precio $S_t$ evoluciona según la ecuación diferencial estocástica
+
+$$dS_t = \mu S_t\,dt + \sigma S_t\,dW_t,$$
+
+donde $\mu$ es la deriva instantánea, $\sigma$ la volatilidad y $W_t$ un proceso de Wiener. Aplicando el lema de Itô a $\ln S_t$ se obtiene la solución cerrada
+
+$$S_t = S_0 \exp\!\left[\left(\mu - \tfrac{1}{2}\sigma^2\right)t + \sigma W_t\right],$$
+
+de donde se sigue el resultado que interesa aquí, ya que el rendimiento logarítmico de un intervalo de longitud $\Delta t$ queda como
+
+$$r_t = \ln\!\left(\frac{S_t}{S_{t-\Delta t}}\right) \sim \mathcal{N}\!\left(\left(\mu - \tfrac{1}{2}\sigma^2\right)\Delta t,\; \sigma^2 \Delta t\right),$$
+
+con independencia entre intervalos disjuntos. El modelo, por lo tanto, no es una afirmación sobre el precio sino sobre el logaritmo de su cambio, y esa es la razón de que todo el análisis se construya sobre $r_t$ y no sobre $S_t$.
+
+De esa formulación se desprenden tres supuestos verificables, que conviene enunciar por separado porque cada uno se rompe de manera distinta y con consecuencias distintas. El primero es que los rendimientos logarítmicos tienen una **deriva constante** $\nu = \mu - \tfrac{1}{2}\sigma^2$, es decir, una media que no depende del tiempo y que en principio debería ser positiva para un activo con prima de riesgo. El segundo es que esos rendimientos se distribuyen de forma **normal**, lo cual fija la probabilidad de cualquier evento extremo una vez conocidas la media y la desviación estándar. El tercero es que la **volatilidad es constante** y que los rendimientos son independientes entre sí, condición que hace de la trayectoria del logaritmo del precio una caminata aleatoria sin memoria.
+
+## Qué activo utilizo y por qué
+
+Trabajo con **GFNORTEO.MX**, la serie O de Grupo Financiero Banorte, desde el 2 de enero de 2015 hasta la fecha de elaboración. La elección responde a tres criterios. El primero es de liquidez, ya que Banorte es de las emisoras más operadas de la Bolsa Mexicana de Valores y su serie diaria tiene pocos huecos, condición necesaria para que la autocorrelación y los momentos muestrales midan comportamiento del precio y no ruido de negociación. El segundo es de longitud, porque una ventana de casi doce años proporciona cerca de tres mil observaciones, tamaño que permite estimar un cuarto momento con error razonable y, sobre todo, que garantiza la presencia de varios regímenes de volatilidad en lugar de uno solo.
+
+El tercer criterio es sustantivo, ya que se trata de una acción bancaria en un mercado emergente, es decir, del tipo de activo donde los supuestos del movimiento browniano geométrico tienen más probabilidad de fallar de forma visible. Un banco concentra riesgo de crédito, riesgo de tasa y exposición al ciclo económico local, y en México se le añade sensibilidad al tipo de cambio y al calendario político, de manera que si el modelo resistiera aquí sería una buena señal de generalidad, y si no resiste, los mecanismos concretos de la falla quedan a la vista. Conviene anticipar que ocurre lo segundo, y que interesa entender exactamente dónde y por cuánto.
+
+---
+
+# II) Preparación de los datos
+
+## 1. Entorno de trabajo
+
+```{r librerias}
+library(quantmod)   # descarga de precios y cálculo de rendimientos
+library(moments)    # sesgo y curtosis
+library(tseries)    # prueba de normalidad de Jarque-Bera
+```
+
+## 2. Descarga de los precios
+
+```{r descarga}
+ticker <- 'GFNORTEO.MX'
+getSymbols(ticker, src = 'yahoo', from = '2015-01-01')
+prices <- na.omit(Ad(get(ticker)))
+
+cobertura <- data.frame(
+  Activo         = ticker,
+  Observaciones  = length(prices),
+  Inicio         = as.character(index(prices)[1]),
+  Fin            = as.character(tail(index(prices), 1)),
+  Precio_inicial = round(as.numeric(prices[1]), 2),
+  Precio_final   = round(as.numeric(tail(prices, 1)), 2)
+)
+cobertura
+```
+
+La descarga entrega 2,938 precios de cierre ajustado entre el 2 de enero de 2015 y el 9 de septiembre de 2026, y se trabaja con la serie ajustada que extrae la función `Ad()` porque incorpora dividendos y splits. La distinción no es menor en este caso, ya que Banorte reparte dividendos con regularidad y una serie sin ajustar registraría cada pago como una caída de precio que económicamente nunca ocurrió, lo cual sesgaría a la baja la media de los rendimientos y agregaría a la muestra observaciones negativas artificiales justo en el rango donde después se miden las colas.
+
+El precio ajustado pasa de 41.57 a 199.00 pesos, un factor de 4.79 veces en el periodo, que en términos logarítmicos equivale a un rendimiento acumulado de 1.566. Esa cifra reaparecerá más adelante y no por casualidad, dado que la aditividad temporal del rendimiento logarítmico hace que la suma de los 2,938 rendimientos diarios reproduzca exactamente el rendimiento del periodo completo.
+
+---
+
+# III) Del precio al rendimiento
+
+## 3. Precio, logaritmo del precio y rendimientos
+
+```{r transformacion}
+lg_price = log(prices)
+srets    = dailyReturn(prices, type = 'arithmetic')
+logrets  = dailyReturn(prices, type = 'log')
+head(cbind(srets, logrets))
+```
+
+Las dos definiciones de rendimiento son prácticamente indistinguibles en frecuencia diaria, lo cual era previsible porque $\ln(1+x)\approx x$ cuando $x$ es pequeño, y en una sesión los movimientos rara vez rebasan unos cuantos puntos porcentuales. La preferencia por la versión logarítmica no proviene entonces de una diferencia numérica sino de dos propiedades del modelo. La primera es la aditividad ya mencionada, que permite escalar media y varianza por el número de días. La segunda es de coherencia estricta, ya que el movimiento browniano geométrico afirma que es $\ln S_t$ el que sigue una caminata aleatoria con deriva, de modo que el objeto sobre el que el modelo hace su afirmación de normalidad es $r_t$ y no el rendimiento simple.
+
+## 4. Trayectoria del precio
+
+```{r grafica-precio}
+plot(prices, main = 'GFNORTEO.MX - Precio de cierre ajustado', col = 'steelblue4')
+```
+
+```{r grafica-logprecio}
+plot(lg_price, main = 'GFNORTEO.MX - Logaritmo del precio', col = 'steelblue4')
+```
+
+El contraste entre ambas gráficas ilustra para qué sirve la transformación logarítmica. En la escala de niveles el crecimiento de los últimos años domina visualmente y aplasta la primera mitad de la muestra, de manera que un movimiento de diez pesos parece igual de importante en 2015 que en 2026 cuando en realidad representaba una cuarta parte del precio en el primer caso y apenas un cinco por ciento en el segundo. En la escala logarítmica, en cambio, distancias verticales iguales corresponden a cambios porcentuales iguales, y por ello la pendiente de esa segunda gráfica es una lectura directa de la deriva del modelo.
+
+## 5. Distribución del precio y del logaritmo del precio
+
+```{r histogramas-precio}
+par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
+
+hist(prices, n = 100, main = 'Distribución del precio',
+     xlab = 'Precio ajustado (MXN)', ylab = 'Frecuencia',
+     col = 'grey85', border = 'white')
+
+hist(lg_price, n = 100, main = 'Distribución del logaritmo del precio',
+     xlab = 'log(Precio)', ylab = 'Frecuencia',
+     col = 'grey85', border = 'white')
+```
+
+Estos dos histogramas se incluyen porque son informativos por lo que no muestran, y conviene señalarlo antes de que se les atribuya un significado que no tienen. Ninguno de los dos describe la distribución de una variable aleatoria, ya que el precio es una serie no estacionaria cuya media se desplaza a lo largo del tiempo, de modo que lo que se está graficando es cuánto tiempo pasó el precio en cada rango durante el periodo y no la probabilidad de que tome cada valor. Un pico en el histograma indica un nivel donde el precio permaneció muchas sesiones, no un valor especialmente probable.
+
+La utilidad de la comparación es distinta, y consiste en dejar ver por qué el modelo se plantea sobre el logaritmo. El precio está acotado por abajo en cero y crece de forma multiplicativa, lo cual produce en niveles una distribución necesariamente asimétrica hacia la derecha, mientras que el logaritmo elimina esa restricción y convierte el crecimiento multiplicativo en crecimiento aditivo. El movimiento browniano geométrico explota justamente esa propiedad, ya que supone lognormalidad del precio, que es equivalente a normalidad de su logaritmo, y lo que sigue a continuación es la prueba de si esa equivalencia se sostiene sobre los datos.
+
+## 6. Rendimientos: serie y distribución
+
+```{r grafica-rendimientos}
+plot(logrets, main = 'GFNORTEO.MX - Rendimiento logarítmico diario', col = 'steelblue4')
+```
+
+```{r histograma-rendimientos}
+par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
+
+hist(logrets, n = 100, freq = FALSE,
+     main = 'Rendimientos frente a la normal de referencia',
+     xlab = 'Rendimiento logarítmico', ylab = 'Densidad',
+     col = 'grey85', border = 'white')
+curve(dnorm(x, mean = mean(logrets), sd = sd(logrets)),
+      add = TRUE, col = 'firebrick', lwd = 2, lty = 2)
+legend('topright', 'Normal con la misma media y desviación',
+       col = 'firebrick', lty = 2, lwd = 2, bty = 'n', cex = 0.85)
+
+qqnorm(as.numeric(logrets), pch = 20, col = 'grey40',
+       main = 'Gráfica cuantil-cuantil contra la normal',
+       xlab = 'Cuantiles teóricos', ylab = 'Cuantiles observados')
+qqline(as.numeric(logrets), col = 'firebrick', lwd = 2, lty = 2)
+```
+
+La serie de rendimientos ya adelanta el hallazgo central antes de calcular una sola estadística, ya que se alternan tramos de calma con episodios de agitación concentrados en periodos identificables, y ese patrón es incompatible con la volatilidad constante que el modelo exige. El histograma añade la segunda anomalía, dado que la densidad empírica es más alta y más estrecha que la normal en el centro y sin embargo deja observaciones bastante más allá de donde la curva de referencia ya se ha extinguido, combinación que define la leptocurtosis.
+
+La gráfica cuantil-cuantil es la más severa de las tres. Si los rendimientos fueran normales los puntos caerían sobre la recta, y lo que se observa es que la nube se ajusta razonablemente en la región central pero se separa de forma pronunciada en ambos extremos, curvándose hacia abajo en la cola izquierda y hacia arriba en la derecha. Esa forma de S invertida es la firma gráfica de las colas pesadas, y su asimetría, más marcada del lado izquierdo, anticipa el sesgo negativo que la sección siguiente cuantifica.
+
+## 7. Media y volatilidad
+
+```{r momentos}
+ER_rets    = mean(srets)
+ER_logrets = mean(logrets)
+s_rets     = sd(srets)
+s_logrets  = sd(logrets)
+
+momentos <- data.frame(
+  Serie        = c('Rendimiento simple', 'Rendimiento logarítmico'),
+  Media_diaria = c(ER_rets, ER_logrets),
+  Desv_diaria  = c(s_rets, s_logrets),
+  Media_anual  = c(ER_rets, ER_logrets) * 252,
+  Vol_anual    = c(s_rets, s_logrets) * sqrt(252)
+)
+momentos[, -1] <- round(momentos[, -1], 5)
+momentos
+```
+
+La media diaria del rendimiento logarítmico es de 0.00053 y su desviación estándar de 0.02047, cifras que anualizadas con los factores habituales de 252 sesiones y su raíz equivalen a una deriva de 13.43 % y una volatilidad de 32.50 %. La primera lectura que merecen es de proporción, ya que la deriva diaria representa apenas la trigésima octava parte de la desviación diaria, y esa desproporción es la razón de fondo por la cual en horizontes cortos el riesgo domina por completo al rendimiento esperado: la deriva escala con $\Delta t$ mientras la incertidumbre escala con $\sqrt{\Delta t}$.
+
+La comparación entre las dos filas de la tabla ofrece además una verificación del propio modelo que no conviene pasar por alto. La media del rendimiento simple es 0.00074 y la del logarítmico 0.00053, y la diferencia entre ambas es de 0.00021, prácticamente idéntica a $\tfrac{1}{2}\sigma^2 = \tfrac{1}{2}(0.02047)^2 = 0.00021$. Ese es exactamente el término de corrección de Itô que aparece en la solución del modelo, de modo que la relación $\nu = \mu - \tfrac{1}{2}\sigma^2$ no es una identidad impuesta sobre los datos sino algo que la muestra reproduce por sí sola, y en términos anuales significa que la deriva de 13.43 % del logaritmo corresponde a un rendimiento esperado de 18.70 % en escala aritmética.
+
+---
+
+# IV) Pruebas sobre los supuestos del modelo
+
+## 8. Primer supuesto: la deriva
+
+La media del rendimiento logarítmico es muy pequeña en términos absolutos. La pregunta pertinente es si esa magnitud resiste el ruido de la propia muestra, es decir, si podemos afirmar que la deriva del proceso es distinta de cero o si lo observado es compatible con una caminata aleatoria sin tendencia.
+
+$$H_0: \mu_r = 0$$
+$$H_a: \mu_r \neq 0$$
+
+```{r prueba-deriva}
+t.test(logrets, mu = 0, alternative = "two.sided")
+```
+
+El estadístico $t$ es de 1.4112 con 2,937 grados de libertad y el valor $p$ asciende a 0.1583, de manera que no se rechaza la hipótesis nula a ningún nivel de significancia convencional. La interpretación correcta de esa cifra es que, si la deriva verdadera fuera cero, en un 15.83 % de las muestras del mismo tamaño observaríamos una media al menos tan alejada de cero como la que arrojaron estos datos, lo cual es demasiado frecuente para tratar el resultado como evidencia en contra de la nula. El intervalo de confianza al 95 % lo confirma desde otro ángulo, ya que va de $-0.00021$ a $0.00127$ y contiene al cero, aunque también contiene valores de deriva económicamente muy relevantes, y ahí está el matiz que importa.
+
+La conclusión no es que la deriva sea cero, sino que la muestra no permite distinguirla de cero, y la diferencia entre ambas afirmaciones es precisamente el punto. Una acción que multiplicó su valor por 4.79 en el periodo evidentemente tuvo tendencia, pero el ruido diario es tan grande en relación con ella que ni siquiera doce años de datos bastan para detectarla con las herramientas paramétricas usuales. Puede cuantificarse cuánto haría falta, ya que para que la media observada alcanzara significancia al 5 % se requerirían $n = (1.96 \times 0.02047 / 0.00053)^2 \approx 5{,}667$ sesiones, es decir, cerca de 22.5 años de historia continua, plazo durante el cual el supuesto de deriva constante habría dejado de ser creíble mucho antes de que la prueba pudiera pronunciarse.
+
+Ese resultado tiene una consecuencia práctica directa para la medición de riesgo. Dado que la deriva es indistinguible de cero en horizontes cortos y el término de difusión la domina por un factor de casi cuarenta, resulta defendible fijar $\mu = 0$ al calcular medidas de riesgo diarias, simplificación habitual en la industria que este resultado justifica de forma empírica en lugar de asumirla por comodidad.
+
+## 9. Segundo supuesto: la normalidad
+
+$$H_0: \text{los rendimientos siguen una distribución normal}$$
+$$H_a: \text{los rendimientos no siguen una distribución normal}$$
+
+```{r prueba-normalidad}
+jarque.bera.test(logrets)
+```
+
+```{r momentos-superiores}
+n <- length(logrets)
+
+forma <- data.frame(
+  Estadistico       = c('Sesgo', 'Curtosis'),
+  Valor             = c(skewness(logrets), kurtosis(logrets)),
+  Referencia_normal = c(0, 3),
+  Error_estandar    = c(sqrt(6/n), sqrt(24/n))
+)
+forma$z <- (forma$Valor - forma$Referencia_normal) / forma$Error_estandar
+forma[, -1] <- round(forma[, -1], 4)
+forma
+```
+
+La prueba de Jarque-Bera arroja un estadístico de 2,481.5 con dos grados de libertad y un valor $p$ inferior a $2.2\times 10^{-16}$, así que la hipótesis de normalidad se rechaza sin ambigüedad alguna. La magnitud del rechazo merece dimensionarse, ya que el valor crítico de una $\chi^2_2$ al 5 % es 5.99 y el estadístico observado lo supera 414 veces, de modo que no estamos ante un rechazo marginal atribuible al tamaño de muestra sino ante una discrepancia estructural.
+
+Descomponer el estadístico indica de dónde proviene el rechazo, dado que su construcción es
+$$JB = \frac{n}{6}\left(S^2 + \frac{(K-3)^2}{4}\right),$$
+y con un sesgo de $-0.5051$ y una curtosis de $7.3876$ los dos términos valen 0.2551 y 4.8128 respectivamente. El exceso de curtosis aporta por tanto el 95 % del estadístico y el sesgo apenas el 5 %, lo cual identifica a las colas pesadas, y no a la asimetría, como la violación dominante del supuesto. Ambos componentes son de todos modos significativos por separado, ya que frente a errores estándar asintóticos de $\sqrt{6/n}=0.0452$ y $\sqrt{24/n}=0.0904$ los estadísticos $z$ resultan de $-11.2$ para el sesgo y de $48.5$ para el exceso de curtosis.
+
+Conviene registrar aquí una limitación de esos dos últimos valores. Los errores estándar empleados se derivan bajo el supuesto de normalidad, que es justamente lo que la prueba acaba de rechazar, de manera que en presencia de colas pesadas la varianza real de los estimadores de tercer y cuarto momento es mayor y los $z$ reportados sobreestiman la precisión. Eso no altera la conclusión cualitativa, porque una discrepancia de esa magnitud no se explica por el tamaño de los errores estándar, pero sí obliga a leer las cifras como indicadores de orden de magnitud y no como valores exactos.
+
+## 10. Qué tan lejos queda la normal en las colas
+
+El rechazo de la normalidad es un resultado estadístico. Traducirlo a consecuencias de riesgo requiere contar eventos, que es lo que hacen las dos tablas siguientes.
+
+```{r colas}
+x <- as.numeric(logrets)
+m <- mean(x); s <- sd(x)
+
+colas <- data.frame(
+  Umbral           = c('2 desviaciones', '3 desviaciones', '4 desviaciones'),
+  Observadas       = c(sum(abs(x - m) > 2*s), sum(abs(x - m) > 3*s), sum(abs(x - m) > 4*s)),
+  Esperadas_normal = round(n * c(0.0455, 0.0027, 0.0000633), 2)
+)
+colas$Razon <- round(colas$Observadas / colas$Esperadas_normal, 1)
+colas
+```
+
+```{r cuantiles}
+cuantiles <- data.frame(
+  Nivel     = c('1%', '5%', '95%', '99%'),
+  Empirico  = as.numeric(quantile(x, c(0.01, 0.05, 0.95, 0.99))),
+  Normal    = m + qnorm(c(0.01, 0.05, 0.95, 0.99)) * s
+)
+cuantiles$Diferencia <- cuantiles$Empirico - cuantiles$Normal
+cuantiles[, -1] <- round(cuantiles[, -1], 4)
+cuantiles
+```
+
+El desajuste crece con la distancia al centro, y esa progresión es el hallazgo más importante de la sección. A dos desviaciones estándar se observaron 146 sesiones frente a las 133.7 que predice la normal, un exceso de apenas 1.1 veces que resultaría difícil de notar. A tres desviaciones las observadas son 37 contra 7.9 esperadas, es decir 4.7 veces, y a cuatro desviaciones son 12 contra 0.19, más de sesenta veces lo previsto. La sesión más adversa del periodo, el 17 de marzo de 2020, con una caída de 14.45 %, equivale a 7.08 desviaciones estándar, un evento cuya probabilidad bajo normalidad es de aproximadamente $7\times 10^{-13}$, o dicho de otro modo, uno que debería presentarse una vez cada varios miles de millones de años de operación bursátil, y sin embargo aparece en una muestra de doce.
+
+La tabla de cuantiles muestra el mismo fenómeno desde la perspectiva de una medida de riesgo. Al 99 % el cuantil empírico es de $-5.24$ % contra $-4.71$ % bajo normalidad, de modo que un valor en riesgo paramétrico gaussiano subestimaría la pérdida en 11 % de su propia magnitud. Al 95 %, en cambio, la relación se invierte y el cuantil empírico de $-3.06$ % resulta menos severo que el normal de $-3.31$ %, con lo cual el modelo gaussiano se vuelve conservador precisamente en el nivel donde suele evaluarse. Esa inversión no es una anomalía sino la consecuencia geométrica de la leptocurtosis, dado que una distribución con más masa en el centro y más masa en las colas necesariamente tiene menos masa en los hombros intermedios, y el 75.12 % de las observaciones cae dentro de una desviación estándar frente al 68.27 % que correspondería a la normal. La lección operativa es que verificar un modelo de riesgo al 95 % puede dar una falsa sensación de adecuación mientras el mismo modelo falla al 99 % y falla catastróficamente más allá.
+
+## 11. Tercer supuesto: la volatilidad constante
+
+El tercer supuesto no admite una prueba única como los anteriores, pero se examina con dos evidencias que apuntan en la misma dirección.
+
+```{r acf}
+par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
+acf(x,   lag.max = 25, main = 'ACF de los rendimientos')
+acf(x^2, lag.max = 25, main = 'ACF de los rendimientos al cuadrado')
+```
+
+```{r volatilidad-anual}
+vol_anual <- sqrt(252) * tapply(x, format(index(logrets), '%Y'), sd)
+
+barplot(100 * vol_anual, main = 'Volatilidad anualizada por año',
+        ylab = 'Volatilidad (%)', col = 'grey85', border = 'grey40')
+abline(h = 100 * s * sqrt(252), col = 'firebrick', lwd = 2, lty = 2)
+legend('topright', 'Volatilidad de todo el periodo',
+       col = 'firebrick', lty = 2, lwd = 2, bty = 'n', cex = 0.85)
+```
+
+Las dos funciones de autocorrelación se comportan de manera muy distinta y ese contraste es el argumento central. La de los rendimientos en niveles es prácticamente nula, con una autocorrelación de primer rezago de $-0.0302$ frente a una banda de significancia de $\pm 0.0362$ y solo tres rezagos significativos de veinticinco, cifra compatible con lo que se esperaría por azar al evaluar veinticinco pruebas al 5 %. La de los rendimientos al cuadrado, que aproxima la varianza, alcanza 0.1487 en el primer rezago y permanece significativa en diecinueve de los veinticinco rezagos examinados. El signo del movimiento, por tanto, no tiene memoria, pero su magnitud sí la tiene y de forma persistente.
+
+La volatilidad anualizada calculada año por año confirma la lectura con una cifra directa, ya que oscila entre 23.5 % en 2015 y 50.1 % en 2020, un rango de más del doble alrededor de un promedio de periodo de 32.5 %. La concentración temporal de los eventos extremos apunta a lo mismo, dado que trece de las treinta y siete sesiones que superan tres desviaciones estándar ocurrieron en 2020 y cinco en 2018, de manera que dos de los doce años concentran casi la mitad de los movimientos extremos de toda la muestra. Un proceso con volatilidad constante repartiría esos eventos de forma aproximadamente uniforme a lo largo del tiempo, y lo que se observa es lo contrario.
+
+Este supuesto es además el que explica el anterior, y por eso se examina al final. Si la volatilidad cambia de régimen, la distribución no condicional de los rendimientos es una mezcla de normales con varianzas distintas, y una mezcla de ese tipo presenta exceso de curtosis aun cuando cada componente sea perfectamente normal. Buena parte de la leptocurtosis documentada en la sección anterior puede entenderse entonces no como una propiedad intrínseca de los rendimientos sino como el resultado de agregar en una sola distribución periodos con niveles de riesgo muy diferentes, lo cual señala hacia dónde debe ir la corrección del modelo.
+
+---
+
+# V) Conclusiones
+
+De los tres supuestos examinados, dos se rechazan con contundencia y el tercero queda en una situación intermedia que resulta más interesante que un rechazo limpio. La **deriva** no se distingue estadísticamente de cero, con un estadístico $t$ de 1.4112 y un valor $p$ de 0.1583, pese a que el precio se multiplicó por 4.79 en el periodo, y el cálculo del tamaño de muestra requerido muestra que harían falta unas 5,667 sesiones para detectarla, es decir, un horizonte en el que el propio supuesto de constancia ya no sería sostenible. La **normalidad** se rechaza sin ambigüedad, con un estadístico de Jarque-Bera de 2,481.5 que supera 414 veces su valor crítico, y la descomposición del estadístico atribuye el 95 % del rechazo al exceso de curtosis de 4.39 y solo el 5 % al sesgo de $-0.505$. La **volatilidad constante** se refuta con la autocorrelación de los rendimientos al cuadrado, significativa en diecinueve de veinticinco rezagos frente a tres de veinticinco en niveles, y con un rango de volatilidad anual que va de 23.5 % a 50.1 %.
+
+Los tres resultados se encadenan en lugar de acumularse por separado, y esa es la conclusión de fondo. El cambio de régimen en la volatilidad genera, al agregar la muestra completa, una mezcla de distribuciones con varianzas distintas cuya curtosis excede necesariamente la de una normal, de modo que el rechazo de la normalidad es en buena medida una consecuencia del incumplimiento del tercer supuesto y no un defecto independiente. La deriva, por su parte, resulta indetectable precisamente porque esa volatilidad elevada y cambiante domina la señal por un factor cercano a cuarenta en frecuencia diaria.
+
+Las implicaciones para la medición de riesgo son tres. La primera es que un valor en riesgo paramétrico normal subestima la pérdida al 99 % en 11 % de su magnitud y falla por factores de 4.7 y 63 al contar sesiones más allá de tres y cuatro desviaciones estándar, mientras que al 95 % resulta incluso conservador, lo cual convierte la validación en ese nivel en una prueba engañosa y obliga a calibrar contra las colas efectivas mediante métodos históricos o de valores extremos. La segunda es que la simplificación de fijar la deriva en cero para cálculos de riesgo diario queda respaldada por la propia prueba de hipótesis y no solo por conveniencia, aunque esa misma simplificación sería indefendible para valuación en horizontes largos, donde el término $\mu\,\Delta t$ crece linealmente mientras la incertidumbre lo hace con la raíz. La tercera, que es la que orienta el trabajo siguiente, es que la ruta de corrección no pasa por abandonar el movimiento browniano geométrico sino por relajar el supuesto que falla primero, sustituyendo la volatilidad constante por una volatilidad condicional de la familia GARCH y, si se busca reproducir la frecuencia observada de eventos como el del 17 de marzo de 2020, añadiendo un componente de saltos que la difusión pura no puede generar.
+
+Queda una limitación que conviene declarar. Todo el análisis es no condicional y trata la muestra de casi doce años como si proviniera de un solo proceso, cuando la propia evidencia de la última sección indica que no es así, de manera que los momentos reportados deben leerse como promedios sobre regímenes distintos y no como parámetros de una ley única. Esa es exactamente la razón por la que el modelo condicional es el paso siguiente y no un refinamiento opcional.
+
+---
+
+# Referencias
+
+1. Cont, R. (2001). Empirical properties of asset returns: stylized facts and statistical issues. *Quantitative Finance*, 1(2), 223-236.
+2. Hull, J. C. (2018). *Options, Futures and Other Derivatives* (10.ª ed.). Pearson.
+3. Ruiz Hernández, R. (2026). *Geometric Brownian Motion*. Análisis de Riesgos, ITESO.
+4. Tsay, R. S. (2010). *Analysis of Financial Time Series* (3.ª ed.). Wiley.
+
+Datos de mercado obtenidos de Yahoo Finance mediante el paquete `quantmod`. Las cifras citadas en el texto corresponden a la muestra cerrada al 9 de septiembre de 2026 y se actualizan al volver a compilar el documento.
